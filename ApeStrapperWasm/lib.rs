@@ -5,46 +5,52 @@ use ink_lang as ink;
 #[ink::contract]
 mod ApeStrapperWasm {
 
+    use ink_storage::traits::SpreadAllocate;
+    use ink_storage::Mapping;
+
     /// Defines the storage of your contract.
     /// Add new fields to the below struct in order
     /// to add new static storage fields to your contract.
     #[ink(storage)]
+    #[derive(SpreadAllocate)]
     pub struct ApeStrapperWasm {
-        /// Stores a single `bool` value on the storage.
-        initialized: bool,
-        number_of_payees: u8,
-        initial_num_of_payees: u8,
-        chaos_dao_allocation: f64,
-        mayhem_allocation: f64,
+        // CHAOSDAO_MULTISIG_ADDRESS: AccountId,
+        // NODE_OPERATOR_ADDRESS: AccountId,
+        // contract_creator: AccountId,
+        ape_allocation: Mapping<AccountId, u32>,
+        ape_approved: Mapping<AccountId, bool>,
+        apes: Vec<AccountId>,
     }
 
     impl ApeStrapperWasm {
         /// Constructor that initializes the `bool` value to the given `init_value`.
         #[ink(constructor)]
-        pub fn new(init_value: bool) -> Self {
-            Self { value: init_value }
+        pub fn new(apes: Vec<AccountId>) -> Self {
+            ink_lang::utils::initialize_contract(|contract: &mut Self| {
+                for ape in apes {
+                    contract.apes.push(ape);
+                }
+            })
         }
 
         /// Constructor that initializes the `bool` value to `false`.
         ///
         /// Constructors can delegate to other constructors.
-        #[ink(constructor)]
-        pub fn default() -> Self {
-            Self::new(Default::default())
-        }
+        // #[ink(constructor)]
+        // pub fn default() -> Self {
+        //     Self::new(Default::default())
+        // }
 
         /// A message that can be called on instantiated contracts.
         /// This one flips the value of the stored `bool` from `true`
         /// to `false` and vice versa.
         #[ink(message)]
-        pub fn flip(&mut self) {
-            self.value = !self.value;
-        }
+        pub fn flip(&mut self) {}
 
         /// Simply returns the current value of our `bool`.
         #[ink(message)]
-        pub fn get(&self) -> bool {
-            self.value
+        pub fn get_apes(&self) -> Vec<AccountId> {
+            self.apes.clone()
         }
     }
 
