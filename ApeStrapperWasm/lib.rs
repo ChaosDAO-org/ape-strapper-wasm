@@ -88,8 +88,10 @@ mod ape_strapper_wasm {
         #[ink(message)]
         pub fn set_ape_allocation(&mut self, addresses: Vec<AccountId>, allocations: Vec<Balance>) {
             self.apes = addresses;
-            let transformed_allocations = Self::percentage_to_units(allocations);
+            let transformed_allocations = Self::percentage_to_units(allocations)
+                .expect("Percentage_to_units conversion failed");
             let mut allocation_iter = transformed_allocations.iter();
+
             for (_, ape) in self.apes.iter().enumerate() {
                 // Set the allocation for each ape
                 self.ape_allocation
@@ -121,14 +123,22 @@ mod ape_strapper_wasm {
             self.env().balance()
         }
 
+        /// Pays apes according to their allocation from TOKEN funds held by this contract
         #[ink(message)]
         pub fn nanner_time(&self) -> Result<()> {
             // do actual payout
             const DECIMALS: u32 = 12;
-            let contract_balance = self.env().balance();
+            // Actual contract balance
+            let balance = self.env().balance();
+            // Contract balance - existential deposit amount
+            let contract_safe_balance = balance
+                .checked_sub(self.env().minimum_balance())
+                .unwrap_or(0);
+
+            // Sum of
             let mut total_paid = 0;
 
-            if contract_balance >= 1_000_000_000_000 {
+            if contract_safe_balance >= 1_000_000_000_000 {
                 return Err(Error::BalanceTooLow);
             } else if !self.apes_in_agreement() {
                 return Err(Error::ApesNotInAgreement);
@@ -138,11 +148,12 @@ mod ape_strapper_wasm {
                 // Get individual ape allocation
                 let allocation = self.ape_allocation.get(ape).unwrap();
                 // Calculate amount to pay
-                let amount: Balance = (contract_balance * allocation) / (10 as u128).pow(DECIMALS);
+                let amount: Balance =
+                    (contract_safe_balance * allocation) / (10 as Balance).pow(DECIMALS);
                 total_paid += amount;
 
                 // Transfer `amount` from contract to `ape`
-                if let Err(e) = self.env().transfer(*ape, amount) {
+                if let Err(_) = self.env().transfer(*ape, amount) {
                     return Err(Error::TransferFailed);
                 }
             }
@@ -226,21 +237,22 @@ mod ape_strapper_wasm {
             );
 
             let addresses = vec![alice];
-            let allocations = vec![1];
+            let allocations = vec![10];
 
             contract.set_ape_allocation(addresses, allocations);
 
             let mut allocations = contract.get_allocations();
             assert_eq!(allocations.len(), 1);
 
-            let single_allocation = allocations.pop().unwrap();
+            let (account_id, ten_percent_allocation) = allocations.pop().unwrap();
             assert_eq!(
-                single_allocation.0,
+                account_id,
                 get_account_from_hex_string(
                     "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d"
                 )
             );
-            assert_eq!(single_allocation.1, 1);
+            let ten_percent: u128 = 100_000_000_000;
+            assert_eq!(ten_percent_allocation, ten_percent);
         }
 
         fn get_account_from_hex_string(account_id: &str) -> AccountId {
