@@ -9,6 +9,7 @@ mod ape_strapper_wasm {
     use ink_storage::traits::SpreadAllocate;
     use ink_storage::Mapping;
 
+    #[cfg(not(feature = "ink-as-dependency"))]
     #[ink(storage)]
     #[derive(SpreadAllocate)]
     pub struct ApeStrapperWasm {
@@ -18,6 +19,41 @@ mod ape_strapper_wasm {
         ape_allocation: Mapping<AccountId, Balance>,
         ape_approved: Mapping<AccountId, bool>,
         apes: Vec<AccountId>,
+    }
+
+    pub type Result<T> = core::result::Result<T, Error>;
+
+    #[ink(event)]
+    pub struct AllocationSet {
+        #[ink(topic)]
+        caller: AccountId,
+        num_apes: u32,
+    }
+
+    #[ink(event)]
+    pub struct PayoutExecuted {
+        #[ink(topic)]
+        caller: AccountId,
+        total_paid: Balance,
+    }
+
+    #[ink(event)]
+    pub struct ApeApproved {
+        #[ink(topic)]
+        ape: AccountId,
+        #[ink(topic)]
+        value: bool,
+    }
+
+    #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub enum Error {
+        /// Balance to low to call `nanner_time()`. Contract must have at least 1 UNIT.
+        BalanceTooLow,
+        /// One of the transfer calls in `nanner_time()` failed
+        TransferFailed,
+        /// Contract can only pay out if all apes are in agreement on allocations
+        ApesNotInAgreement,
     }
 
     impl ApeStrapperWasm {
@@ -52,19 +88,84 @@ mod ape_strapper_wasm {
         #[ink(message)]
         pub fn set_ape_allocation(&mut self, addresses: Vec<AccountId>, allocations: Vec<Balance>) {
             self.apes = addresses;
-            let mut allocation_iter = allocations.iter();
+            let transformed_allocations = Self::percentage_to_units(allocations);
+            let mut allocation_iter = transformed_allocations.iter();
             for (_, ape) in self.apes.iter().enumerate() {
+                // Set the allocation for each ape
                 self.ape_allocation
-                    .insert(ape, allocation_iter.next().unwrap_or(&(0 as Balance)))
+                    .insert(&ape, allocation_iter.next().unwrap_or(&(0 as Balance)));
+                self.ape_approved.insert(ape, &false);
             }
 
             // allocations have been set/updated so all `apes` will need to re-approve
             self.set_agreement_false();
+            self.env().emit_event(AllocationSet {
+                caller: self.env().caller(),
+                num_apes: self.apes.len() as u32,
+            })
+        }
+
+        /// Converts from an integer representing a percentage to the full UNIT representation
+        /// ex: 13% entered as 13 will be convted to 130_000_000_000.
+        fn percentage_to_units(allocations: Vec<Balance>) -> Result<Vec<Balance>> {
+            const PERCENTAGE_DECIMALS: u32 = 10;
+            let transformed: Vec<Balance> = allocations
+                .iter()
+                .map(|percentage| percentage * ((10 as u128).pow(PERCENTAGE_DECIMALS)))
+                .collect();
+            Ok(transformed)
         }
 
         #[ink(message)]
         pub fn get_contract_balance(&self) -> Balance {
             self.env().balance()
+        }
+
+        #[ink(message)]
+        pub fn nanner_time(&self) -> Result<()> {
+            // do actual payout
+            const DECIMALS: u32 = 12;
+            let contract_balance = self.env().balance();
+            let mut total_paid = 0;
+
+            if contract_balance >= 1_000_000_000_000 {
+                return Err(Error::BalanceTooLow);
+            } else if !self.apes_in_agreement() {
+                return Err(Error::ApesNotInAgreement);
+            }
+
+            for (_, ape) in self.apes.iter().enumerate() {
+                // Get individual ape allocation
+                let allocation = self.ape_allocation.get(ape).unwrap();
+                // Calculate amount to pay
+                let amount: Balance = (contract_balance * allocation) / (10 as u128).pow(DECIMALS);
+                total_paid += amount;
+
+                // Transfer `amount` from contract to `ape`
+                if let Err(e) = self.env().transfer(*ape, amount) {
+                    return Err(Error::TransferFailed);
+                }
+            }
+
+            self.env().emit_event(PayoutExecuted {
+                caller: self.env().caller(),
+                total_paid,
+            });
+            Ok(())
+        }
+
+        /// Each ape in `apes` must call this function to give the allocation their stamp of approval
+        /// Token payouts with `nanner_time()` cannot happen unless all apes have approved.
+        #[ink(message)]
+        pub fn ape_set_agreement(&mut self) {
+            let caller = self.env().caller();
+            if !self.ape_approved.get(caller).unwrap_or(false) {
+                self.ape_approved.insert(caller, &true);
+                self.env().emit_event(ApeApproved {
+                    ape: caller,
+                    value: true,
+                });
+            }
         }
 
         // #[ink(message)]
@@ -89,9 +190,6 @@ mod ape_strapper_wasm {
         }
     }
 
-    /// Unit tests in Rust are normally defined within such a `#[cfg(test)]`
-    /// module and test functions are marked with a `#[test]` attribute.
-    /// The below code is technically just normal Rust code.
     #[cfg(test)]
     mod tests {
         /// Imports all the definitions from the outer scope so we can use them here.
@@ -156,6 +254,17 @@ mod ape_strapper_wasm {
         fn zero_balance() {
             let contract = ApeStrapperWasm::default();
             ink_env::debug_println!("Contract Balance: {}", contract.get_contract_balance());
+        }
+
+        #[ink::test]
+        fn approval_initially_false() {
+            let mut contract = ApeStrapperWasm::default();
+
+            let alice = get_account_from_hex_string(
+                "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
+            );
+            contract.set_ape_allocation(vec![alice], vec![1]);
+            assert_eq!(contract.ape_approved.get(alice).unwrap(), false);
         }
     }
 }
