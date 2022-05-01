@@ -125,12 +125,11 @@ mod ape_strapper_wasm {
 
         /// Pays apes according to their allocation from TOKEN funds held by this contract
         #[ink(message)]
-        pub fn nanner_time(&self) -> Result<()> {
+        pub fn nanner_time(&self) -> Result<Balance> {
             // do actual payout
             const DECIMALS: u32 = 12;
             // Actual contract balance
             let balance = self.env().balance();
-            // Contract balance - existential deposit amount
             let contract_safe_balance = balance
                 .checked_sub(self.env().minimum_balance())
                 .unwrap_or(0);
@@ -138,7 +137,8 @@ mod ape_strapper_wasm {
             // Sum of
             let mut total_paid = 0;
 
-            if contract_safe_balance >= 1_000_000_000_000 {
+            // Less than 1 UNIT
+            if contract_safe_balance < 1 {
                 return Err(Error::BalanceTooLow);
             } else if !self.apes_in_agreement() {
                 return Err(Error::ApesNotInAgreement);
@@ -148,8 +148,10 @@ mod ape_strapper_wasm {
                 // Get individual ape allocation
                 let allocation = self.ape_allocation.get(ape).unwrap();
                 // Calculate amount to pay
-                let amount: Balance =
-                    (contract_safe_balance * allocation) / (10 as Balance).pow(DECIMALS);
+                let amount: Balance = (contract_safe_balance
+                    .checked_mul(allocation)
+                    .expect("Overflow"))
+                    / (10 as Balance).pow(DECIMALS);
                 total_paid += amount;
 
                 // Transfer `amount` from contract to `ape`
@@ -162,7 +164,7 @@ mod ape_strapper_wasm {
                 caller: self.env().caller(),
                 total_paid,
             });
-            Ok(())
+            Ok(total_paid)
         }
 
         /// Each ape in `apes` must call this function to give the allocation their stamp of approval
@@ -232,27 +234,36 @@ mod ape_strapper_wasm {
             //     0x30, 0x3d,
             // ]);
 
-            let alice = get_account_from_hex_string(
-                "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
-            );
-
-            let addresses = vec![alice];
-            let allocations = vec![10];
-
-            contract.set_ape_allocation(addresses, allocations);
+            allocation_setup(&mut contract);
 
             let mut allocations = contract.get_allocations();
-            assert_eq!(allocations.len(), 1);
+            assert_eq!(allocations.len(), 2);
 
-            let (account_id, ten_percent_allocation) = allocations.pop().unwrap();
+            let fifty_percent: Balance = 500_000_000_000;
+
+            // Test Charlie account
+            let (charlie_account_id, charlie_allocation) = allocations.pop().unwrap();
+            // AccountId correct?
             assert_eq!(
-                account_id,
+                charlie_account_id,
                 get_account_from_hex_string(
-                    "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d"
+                    "0x90b5ab205c6974c9ea841be688864633dc9ca8a357843eeacf2314649965fe22"
                 )
             );
-            let ten_percent: u128 = 100_000_000_000;
-            assert_eq!(ten_percent_allocation, ten_percent);
+            // Allocation correct?
+            assert_eq!(charlie_allocation, fifty_percent);
+
+            // Test Bob account
+            let (bob_account_id, bob_allocation) = allocations.pop().unwrap();
+            // AccountId correct?
+            assert_eq!(
+                bob_account_id,
+                get_account_from_hex_string(
+                    "0x8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48"
+                )
+            );
+            // Allocation correct?
+            assert_eq!(bob_allocation, fifty_percent);
         }
 
         fn get_account_from_hex_string(account_id: &str) -> AccountId {
@@ -260,6 +271,25 @@ mod ape_strapper_wasm {
             let mut alice_bytes: [u8; 32] = [0x0; 32];
             let _ = hex::decode_to_slice(alice_public_key, &mut alice_bytes);
             return AccountId::from(alice_bytes);
+        }
+
+        fn allocation_setup(contract: &mut ApeStrapperWasm) {
+            let alice = get_account_from_hex_string(
+                "0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d",
+            );
+            let bob = get_account_from_hex_string(
+                "0x8eaf04151687736326c9fea17e25fc5287613693c912909cb226aa4794f26a48",
+            );
+            let charlie = get_account_from_hex_string(
+                "0x90b5ab205c6974c9ea841be688864633dc9ca8a357843eeacf2314649965fe22",
+            );
+
+            // Bob & Charlie are the only 2 apes
+            let addresses = vec![bob, charlie];
+            // Bob and Charlie are assigned 50% allocation each for payouts with `nanner_time()`
+            let allocations = vec![50, 50];
+
+            contract.set_ape_allocation(addresses, allocations);
         }
 
         #[ink::test]
@@ -277,6 +307,16 @@ mod ape_strapper_wasm {
             );
             contract.set_ape_allocation(vec![alice], vec![1]);
             assert_eq!(contract.ape_approved.get(alice).unwrap(), false);
+        }
+
+        #[ink::test]
+        fn nanner_time_works() {
+            let mut contract = ApeStrapperWasm::default();
+
+            allocation_setup(&mut contract);
+
+            // let total_paid = contract.nanner_time().unwrap();
+            // assert_ne!(total_paid, 100_000);
         }
     }
 }
