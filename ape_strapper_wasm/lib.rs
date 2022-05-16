@@ -9,12 +9,12 @@ pub mod my_payment_splitter {
 
     #[ink(storage)]
     #[derive(Default, SpreadAllocate, PaymentSplitterStorage)]
-    pub struct SplitterStruct {
+    pub struct ApeStrapperWasm {
         #[PaymentSplitterStorageField]
         splitter: PaymentSplitterData,
     }
 
-    impl SplitterStruct {
+    impl ApeStrapperWasm {
         #[ink(constructor)]
         pub fn new(payees_and_shares: Vec<(AccountId, Balance)>) -> Self {
             ink_lang::utils::initialize_contract(|instance: &mut Self| {
@@ -34,7 +34,7 @@ pub mod my_payment_splitter {
         }
     }
 
-    impl PaymentSplitter for SplitterStruct {}
+    impl PaymentSplitter for ApeStrapperWasm {}
 
     #[cfg(test)]
     mod tests {
@@ -51,7 +51,7 @@ pub mod my_payment_splitter {
         #[ink::test]
         fn new_constructor_works() {
             let accounts = accounts();
-            let instance = SplitterStruct::new(vec![(accounts.bob, 50), (accounts.charlie, 50)]);
+            let instance = ApeStrapperWasm::new(vec![(accounts.bob, 50), (accounts.charlie, 50)]);
             assert_eq!(instance.get().payees.len(), 2);
         }
 
@@ -59,7 +59,7 @@ pub mod my_payment_splitter {
         fn release_all_works() {
             let accounts = accounts();
             let mut instance =
-                SplitterStruct::new(vec![(accounts.bob, 60), (accounts.charlie, 40)]);
+                ApeStrapperWasm::new(vec![(accounts.bob, 60), (accounts.charlie, 40)]);
 
             ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(accounts.charlie, 0);
             ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(accounts.bob, 0);
@@ -78,7 +78,7 @@ pub mod my_payment_splitter {
 
             // let accounts = accounts();
             // let mut instance =
-            //     SplitterStruct::new(vec![(accounts.charlie, 100), (accounts.bob, 200)]);
+            //     ApeStrapperWasm::new(vec![(accounts.charlie, 100), (accounts.bob, 200)]);
             // ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(accounts.charlie, 0);
             // ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(accounts.bob, 0);
             // let amount = 1000000;
