@@ -40,11 +40,13 @@ pub mod my_payment_splitter {
     mod tests {
         use super::*;
 
+        // use alloc::fmt;
         use brush::test_utils::accounts;
         use ink_env::{AccountId, *};
         use ink_lang as ink;
         use ink_prelude::vec;
         use ink_storage::traits::SpreadAllocate;
+        use std::fmt as format;
 
         use ink::codegen::{EmitEvent, Env};
 
@@ -63,16 +65,28 @@ pub mod my_payment_splitter {
 
             ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(accounts.charlie, 0);
             ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(accounts.bob, 0);
-            let amount = 1_000;
 
             // Add `amount` to the contract balance
-            let caller = instance.caller();
-            // add_funds(instance.account_id(), amount);
+            let amount = 1_000;
+            ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(
+                instance.env().account_id(),
+                amount,
+            );
 
-            // Verifications
-            // assert_eq!(instance.get().balance, amount);
+            // Verification
+            assert_eq!(instance.env().balance(), amount);
+
+            let msg = format!("Balance before release: {}\n", instance.env().balance());
+            debug_message(&msg);
 
             // instance.release_all();
+            instance.release(accounts.charlie);
+
+            let msg = format!("Balance after release: {}\n", instance.env().balance());
+            debug_message(&msg);
+
+            // Verify charlie and bob accounts have correct funds
+            assert_eq!(instance.env().balance(), 0 as Balance);
 
             //----------------------
 
@@ -101,14 +115,6 @@ pub mod my_payment_splitter {
             //     ink_env::test::get_account_balance::<ink_env::DefaultEnvironment>(accounts.bob)
             //         .unwrap()
             // );
-        }
-
-        fn add_funds(account: AccountId, amount: Balance) {
-            let balance = ink_env::balance::<ink_env::DefaultEnvironment>();
-            ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(
-                account,
-                balance + amount,
-            );
         }
     }
 }
