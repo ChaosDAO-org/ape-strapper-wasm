@@ -17,7 +17,9 @@ scale = { package = "parity-scale-codec", version = "3", default-features = fals
 scale-info = { version = "2", default-features = false, features = ["derive"], optional = true }
 
 # Brush dependency
-brush = { tag = "v1.6.1", git = "https://github.com/Supercolony-net/openbrush-contracts", default-features = false, features = ["payment_splitter"] }
+# brush = { tag = "v1.6.1", git = "https://github.com/Supercolony-net/openbrush-contracts", default-features = false, features = ["payment_splitter"] }
+# use until next OpenBrush release
+brush = { git = "https://github.com/jakerumbles/openbrush-contracts", branch = "payment-splitter-release-all", default-features = false, features = ["payment_splitter"] }
 
 [features]
 default = ["std"]

@@ -22,15 +22,11 @@ pub mod my_payment_splitter {
             })
         }
 
+        /// Payout all payees at once.
         #[ink(message)]
         pub fn release_all(&mut self) -> Result<(), PaymentSplitterError> {
-            let payees = self.get().payees.clone();
-
-            for account in payees.into_iter() {
-                self.release(account)?;
-            }
-
-            Ok(())
+            // `_release_all()` is an internal method defined by the `PaymentSplitterInternal` trait
+            self._release_all()
         }
     }
 
@@ -42,13 +38,11 @@ pub mod my_payment_splitter {
 
         // use alloc::fmt;
         use brush::test_utils::accounts;
-        use ink_env::{AccountId, *};
+        use ink_env::AccountId;
         use ink_lang as ink;
         use ink_prelude::vec;
-        use ink_storage::traits::SpreadAllocate;
-        use std::fmt as format;
 
-        use ink::codegen::{EmitEvent, Env};
+        use ink::codegen::Env;
 
         #[ink::test]
         fn new_constructor_works() {
@@ -61,60 +55,35 @@ pub mod my_payment_splitter {
         fn release_all_works() {
             let accounts = accounts();
             let mut instance =
-                ApeStrapperWasm::new(vec![(accounts.bob, 60), (accounts.charlie, 40)]);
-
+                ApeStrapperWasm::new(vec![(accounts.charlie, 100), (accounts.bob, 200)]);
             ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(accounts.charlie, 0);
             ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(accounts.bob, 0);
+            let amount = 1000000;
+            add_funds(instance.env().account_id(), amount);
 
-            // Add `amount` to the contract balance
-            let amount = 1_000;
-            ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(
-                instance.env().account_id(),
-                amount,
+            assert_eq!(100 + 200, instance.total_shares());
+            assert!(instance._release_all().is_ok());
+            assert_eq!(999999, instance.total_released());
+            assert_eq!(333333, instance.released(accounts.charlie));
+            assert_eq!(
+                333333,
+                ink_env::test::get_account_balance::<ink_env::DefaultEnvironment>(accounts.charlie)
+                    .unwrap()
             );
+            assert_eq!(2 * 333333, instance.released(accounts.bob));
+            assert_eq!(
+                2 * 333333,
+                ink_env::test::get_account_balance::<ink_env::DefaultEnvironment>(accounts.bob)
+                    .unwrap()
+            );
+        }
 
-            // Verification
-            assert_eq!(instance.env().balance(), amount);
-
-            let msg = format!("Balance before release: {}\n", instance.env().balance());
-            debug_message(&msg);
-
-            // instance.release_all();
-            instance.release(accounts.charlie);
-
-            let msg = format!("Balance after release: {}\n", instance.env().balance());
-            debug_message(&msg);
-
-            // Verify charlie and bob accounts have correct funds
-            assert_eq!(instance.env().balance(), 0 as Balance);
-
-            //----------------------
-
-            // let accounts = accounts();
-            // let mut instance =
-            //     ApeStrapperWasm::new(vec![(accounts.charlie, 100), (accounts.bob, 200)]);
-            // ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(accounts.charlie, 0);
-            // ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(accounts.bob, 0);
-            // let amount = 1000000;
-            // add_funds(instance.env().account_id(), amount);
-
-            // assert_eq!(100 + 200, instance.total_shares());
-            // assert!(instance.release(accounts.charlie).is_ok());
-            // assert_eq!(333333, instance.total_released());
-            // assert!(instance.release(accounts.bob).is_ok());
-            // assert_eq!(999999, instance.total_released());
-            // assert_eq!(333333, instance.released(accounts.charlie));
-            // assert_eq!(
-            //     333333,
-            //     ink_env::test::get_account_balance::<ink_env::DefaultEnvironment>(accounts.charlie)
-            //         .unwrap()
-            // );
-            // assert_eq!(2 * 333333, instance.released(accounts.bob));
-            // assert_eq!(
-            //     2 * 333333,
-            //     ink_env::test::get_account_balance::<ink_env::DefaultEnvironment>(accounts.bob)
-            //         .unwrap()
-            // );
+        fn add_funds(account: AccountId, amount: Balance) {
+            let balance = ink_env::balance::<ink_env::DefaultEnvironment>();
+            ink_env::test::set_account_balance::<ink_env::DefaultEnvironment>(
+                account,
+                balance + amount,
+            );
         }
     }
 }
